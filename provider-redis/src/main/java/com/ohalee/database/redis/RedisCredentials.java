@@ -87,6 +87,18 @@ public record RedisCredentials(
         return new RedisCredentials(host, port, username, password, database, null, 5, 10);
     }
 
+    /**
+     * Creates credentials with specified pool settings.
+     *
+     * @param host            The hostname.
+     * @param port            The port.
+     * @param username        The username.
+     * @param password        The password.
+     * @param database        The database index.
+     * @param minimumPoolSize The minimum pool size.
+     * @param maximumPoolSize The maximum pool size.
+     * @return The Redis credentials.
+     */
     public static RedisCredentials from(String host, int port, String username, String password, int database, int minimumPoolSize, int maximumPoolSize) {
         return from(host, port, username, password, database, null, minimumPoolSize, maximumPoolSize);
     }
