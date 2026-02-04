@@ -32,7 +32,43 @@ subprojects {
         options.release.set(21)
     }
 
-    repositories {
-        mavenCentral()
+    configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
+        publishToMavenCentral()
+
+        signAllPublications()
+
+        coordinates(rootProject.group.toString(), project.name, rootProject.version.toString())
+
+        pom {
+            name.set(project.name)
+            description.set("A flexible and lightweight Java library providing unified abstractions for database connections with built-in support for MariaDB and Redis.")
+            url.set("https://github.com/ohAleee/DatabaseProvider")
+
+            licenses {
+                license {
+                    name.set("MIT License")
+                    url.set("https://opensource.org/licenses/MIT")
+                }
+            }
+
+            developers {
+                developer {
+                    id.set("ohalee")
+                    name.set("ohAlee")
+                    email.set("business@ohalee.com")
+                }
+            }
+
+            scm {
+                connection.set("scm:git:git://github.com/ohAleee/DatabaseProvider.git")
+                developerConnection.set("scm:git:ssh://github.com:ohAleee/DatabaseProvider.git")
+                url.set("https://github.com/ohAleee/DatabaseProvider")
+            }
+
+            issueManagement {
+                system.set("GitHub")
+                url.set("https://github.com/ohAleee/DatabaseProvider/issues")
+            }
+        }
     }
 }
