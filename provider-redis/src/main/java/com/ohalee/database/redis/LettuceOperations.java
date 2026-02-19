@@ -159,13 +159,17 @@ public abstract class LettuceOperations<K, V> {
                         } catch (Exception e) {
                             // Queuing phase failed — DISCARD is valid here
                             return async.discard()
+                                    .whenComplete((s, discardEx) -> {
+                                        if (discardEx != null) e.addSuppressed(discardEx);
+                                    })
                                     .thenCompose(s -> CompletableFuture.failedFuture(e));
                         }
                     })
                     .handle((result, ex) -> {
                         try {
                             if (ex != null) {
-                                // Reached only if exec() failed — transaction already concluded, no DISCARD
+                                // Reached if queuing failed (after DISCARD) or if exec() failed
+                                // In both cases the transaction is already concluded
                                 Throwable cause = (ex instanceof CompletionException) ? ex.getCause() : ex;
                                 throw new CompletionException(new RedisOperationException("Async transaction failed", cause));
                             }
