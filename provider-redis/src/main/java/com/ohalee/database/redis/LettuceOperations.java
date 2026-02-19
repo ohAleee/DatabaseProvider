@@ -32,7 +32,7 @@ import java.util.concurrent.CompletionException;
 public abstract class LettuceOperations<K, V> {
 
     /**
-     * Providers a dedicated Redis connection for the current operation.
+     * Provides a dedicated Redis connection for the current operation.
      * <p>
      * The connection provided here will be closed (or returned to the pool)
      * automatically after the operation completes.
@@ -45,16 +45,23 @@ public abstract class LettuceOperations<K, V> {
      * Executes an asynchronous Redis operation.
      * <p>
      * The connection is automatically closed when the future completes (successfully or exceptionally).
+     * Connection acquisition is separated from operation execution so that failure messages
+     * accurately reflect where the error occurred.
      *
      * @param operation the operation to execute via {@link RedisAsyncCommands}.
      * @param <T>       the type of the result.
      * @return a CompletableFuture representing the result of the operation.
      */
     public <T> CompletableFuture<T> executeAsync(AsyncRedisOperation<K, V, T> operation) {
-        StatefulRedisConnection<K, V> connection = this.connection();
+        StatefulRedisConnection<K, V> connection;
         try {
-            RedisAsyncCommands<K, V> async = connection.async();
-            CompletableFuture<T> result = operation.execute(async);
+            connection = this.connection();
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(new RedisOperationException("Failed to acquire Redis connection", e));
+        }
+
+        try {
+            CompletableFuture<T> result = operation.execute(connection.async());
 
             if (result == null) {
                 connection.close();
@@ -64,7 +71,7 @@ public abstract class LettuceOperations<K, V> {
             return result.whenComplete((res, ex) -> connection.close());
         } catch (Exception e) {
             connection.close();
-            return CompletableFuture.failedFuture(new RedisOperationException("Failed to initiate async Redis task", e));
+            return CompletableFuture.failedFuture(new RedisOperationException("Redis operation failed", e));
         }
     }
 
@@ -81,6 +88,8 @@ public abstract class LettuceOperations<K, V> {
             return operation.execute(connection.sync());
         } catch (RedisException e) {
             throw new RedisOperationException("Redis driver error during sync operation", e);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RedisOperationException("Unexpected error during sync operation", e);
         }
@@ -90,7 +99,8 @@ public abstract class LettuceOperations<K, V> {
      * Executes a synchronous transaction (MULTI ... EXEC).
      * <p>
      * This method guarantees that {@code DISCARD} is called if an error occurs
-     * during the queuing phase (before {@code EXEC}).
+     * during the queuing phase (before {@code EXEC}). If {@code EXEC} itself fails,
+     * the transaction is already concluded and {@code DISCARD} is not called.
      *
      * @param operation the operation to execute within the transaction context.
      * @return the TransactionResult containing the results of all queued commands.
@@ -120,39 +130,55 @@ public abstract class LettuceOperations<K, V> {
 
     /**
      * Executes an asynchronous transaction (MULTI ... EXEC).
+     * <p>
+     * {@code DISCARD} is only called if the failure occurs during the queuing phase
+     * (before {@code EXEC}). If {@code EXEC} itself fails, the transaction is already
+     * concluded and {@code DISCARD} is not issued.
+     * Connection acquisition is guarded so a failure there returns a failed future
+     * rather than leaking a connection.
      *
      * @param operation the operation to execute within a transaction.
      * @return a CompletableFuture containing the TransactionResult.
      */
     public CompletableFuture<TransactionResult> executeTransactionAsync(AsyncRedisOperation<K, V, Void> operation) {
-        StatefulRedisConnection<K, V> connection = this.connection();
+        StatefulRedisConnection<K, V> connection;
+        try {
+            connection = this.connection();
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(new RedisOperationException("Failed to acquire Redis connection", e));
+        }
+
         RedisAsyncCommands<K, V> async = connection.async();
 
-        return async.multi().toCompletableFuture()
-                .thenCompose(ok -> {
-                    try {
-                        return operation.execute(async);
-                    } catch (Exception e) {
-                        return CompletableFuture.failedFuture(e);
-                    }
-                })
-                .thenCompose(voidResult -> async.exec().toCompletableFuture())
-                .handle((result, ex) -> {
-                    try {
-                        if (ex != null) {
-                            try {
-                                async.discard();
-                            } catch (Exception ignored) {
-                            }
-
-                            Throwable cause = (ex instanceof CompletionException) ? ex.getCause() : ex;
-                            throw new CompletionException(new RedisOperationException("Async transaction failed", cause));
+        try {
+            return async.multi()
+                    .thenCompose(ok -> {
+                        try {
+                            return operation.execute(async)
+                                    .thenCompose(s -> async.exec());
+                        } catch (Exception e) {
+                            // Queuing phase failed — DISCARD is valid here
+                            return async.discard()
+                                    .thenCompose(s -> CompletableFuture.failedFuture(e));
                         }
-                        return result;
-                    } finally {
-                        connection.close();
-                    }
-                });
+                    })
+                    .handle((result, ex) -> {
+                        try {
+                            if (ex != null) {
+                                // Reached only if exec() failed — transaction already concluded, no DISCARD
+                                Throwable cause = (ex instanceof CompletionException) ? ex.getCause() : ex;
+                                throw new CompletionException(new RedisOperationException("Async transaction failed", cause));
+                            }
+                            return result;
+                        } finally {
+                            connection.close();
+                        }
+                    })
+                    .toCompletableFuture();
+        } catch (Exception e) {
+            connection.close();
+            return CompletableFuture.failedFuture(new RedisOperationException("Redis operation failed", e));
+        }
     }
 
     /**
