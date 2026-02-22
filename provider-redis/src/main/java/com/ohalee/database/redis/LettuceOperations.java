@@ -10,6 +10,7 @@ import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
 
 /**
  * Enhanced Redis operations wrapper using the Lettuce driver.
@@ -61,14 +62,16 @@ public abstract class LettuceOperations<K, V> {
         }
 
         try {
-            CompletableFuture<T> result = operation.execute(connection.async());
+            CompletionStage<T> result = operation.execute(connection.async());
 
             if (result == null) {
                 connection.close();
                 return CompletableFuture.completedFuture(null);
             }
 
-            return result.whenComplete((res, ex) -> connection.close());
+            return result
+                    .whenComplete((r, ex) -> connection.close())
+                    .toCompletableFuture();
         } catch (Exception e) {
             connection.close();
             return CompletableFuture.failedFuture(new RedisOperationException("Redis operation failed", e));
@@ -201,7 +204,7 @@ public abstract class LettuceOperations<K, V> {
          * @return A future representing the result.
          * @throws Exception Allows implementing methods to throw exceptions without strict try/catch blocks.
          */
-        CompletableFuture<T> execute(RedisAsyncCommands<K, V> async) throws Exception;
+        CompletionStage<T> execute(RedisAsyncCommands<K, V> async) throws Exception;
     }
 
     /**
