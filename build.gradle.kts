@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.ohalee.database"
-version = "1.0.3"
+version = "1.0.4"
 
 allprojects {
     group = rootProject.group
@@ -19,9 +19,7 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "com.vanniktech.maven.publish")
 
-    java {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+    extensions.configure<JavaPluginExtension> {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
