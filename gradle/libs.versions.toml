@@ -1,7 +1,7 @@
 [versions]
-mariadb = "3.5.1"
-hikaricp = "6.2.0"
-lettuce = "7.2.1.RELEASE"
+mariadb = "3.5.8"
+hikaricp = "7.0.2"
+lettuce = "7.5.2.RELEASE"
 commons-pool2 = "2.13.1"
 mongodb-driver = "5.6.4"
 h2 = "2.4.240"
