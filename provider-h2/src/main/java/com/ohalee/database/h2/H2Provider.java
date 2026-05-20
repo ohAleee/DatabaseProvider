@@ -63,7 +63,13 @@ public class H2Provider implements DatabaseProvider<Connection> {
     private String buildJdbcUrl() {
         return switch (this.credentials.mode()) {
             case MEMORY -> "jdbc:h2:mem:" + this.credentials.databaseName() + ";DB_CLOSE_DELAY=-1";
-            case FILE -> "jdbc:h2:" + this.credentials.databaseName();
+            case FILE -> {
+                String path = this.credentials.databaseName().replace("\\", "/");
+                if (!path.startsWith("/") && !path.startsWith("./") && !path.startsWith("~/")) {
+                    path = "./" + path;
+                }
+                yield "jdbc:h2:" + path;
+            }
             case SERVER -> String.format("jdbc:h2:tcp://%s:%d/%s",
                     this.credentials.host(), this.credentials.port(), this.credentials.databaseName());
         };
