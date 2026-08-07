@@ -11,18 +11,21 @@ for MariaDB and Redis.
 - [Quick Start](#quick-start)
   - [MariaDB Setup](#mariadb-setup)
   - [Redis Setup](#redis-setup)
+  - [ClickHouse Setup](#clickhouse-setup)
 - [Advanced Usage](#advanced-usage)
   - [MariaDB Schema Loading](#mariadb-schema-loading)
   - [Redis Custom Configuration](#redis-custom-configuration)
   - [Redis Pub/Sub](#redis-pubsub)
+  - [ClickHouse Cloud and SSL](#clickhouse-cloud-and-ssl)
+  - [ClickHouse Schema Loading](#clickhouse-schema-loading)
 - [API Reference](#api-reference)
 
 ## Features
 
 - 🚀 **Simple API**: Clean, interface-based design for easy implementation and testing
-- ⚡ **Connection Pooling**: Built-in connection pooling for MariaDB (HikariCP) and Redis (Lettuce)
-- 🧩 **Multiple Database Support**: MariaDB and Redis providers out of the box
-- 📚 **Schema Management**: Built-in SQL schema loading for MariaDB
+- ⚡ **Connection Pooling**: Built-in connection pooling for MariaDB and ClickHouse (HikariCP) and Redis (Lettuce)
+- 🧩 **Multiple Database Support**: MariaDB, Redis and ClickHouse providers out of the box
+- 📚 **Schema Management**: Built-in SQL schema loading for MariaDB and ClickHouse
 - 📡 **Pub/Sub Support**: Dedicated Redis Pub/Sub connection handling
 - ✨ **Java 21**: Modern Java with the latest features
 
@@ -44,6 +47,9 @@ dependencies {
     // For Redis
     implementation("com.ohalee.database:provider-redis:{version}")
 
+    // For ClickHouse
+    implementation("com.ohalee.database:provider-clickhouse:{version}")
+
     // Or just the API if you want to implement your own provider
     api("com.ohalee.database:api:{version}")
 }
@@ -58,6 +64,9 @@ dependencies {
 
     // For Redis
     implementation 'com.ohalee.database:provider-redis:{version}'
+
+    // For ClickHouse
+    implementation 'com.ohalee.database:provider-clickhouse:{version}'
   
     // Or just the API if you want to implement your own provider
     api 'com.ohalee.database:api:{version}'
@@ -78,6 +87,13 @@ dependencies {
 <dependency>
   <groupId>com.ohalee.database</groupId>
   <artifactId>provider-redis</artifactId>
+  <version>{version}</version>
+</dependency>
+
+<!-- For ClickHouse -->
+<dependency>
+  <groupId>com.ohalee.database</groupId>
+  <artifactId>provider-clickhouse</artifactId>
   <version>{version}</version>
 </dependency>
 
@@ -151,6 +167,41 @@ public class RedisExample {
 
         // Return connection to pool (if using try-with-resources)
         connection.close();
+
+        provider.disconnect();
+    }
+}
+```
+
+### ClickHouse Setup
+
+```java
+import com.ohalee.database.clickhouse.ClickHouseCredentials;
+import com.ohalee.database.clickhouse.ClickHouseProvider;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
+public class ClickHouseExample {
+
+    public static void main(String[] args) throws Exception {
+        // Defaults to the HTTP port 8123
+        ClickHouseCredentials credentials = ClickHouseCredentials.from("localhost", "default", "", "analytics");
+
+        ClickHouseProvider provider = new ClickHouseProvider(credentials);
+        provider.connect();
+
+        try (Connection connection = provider.getConnection();
+             PreparedStatement stmt = connection.prepareStatement("SELECT username, count() AS total FROM events WHERE id = ? GROUP BY username")) {
+
+            stmt.setLong(1, 1L);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                System.out.println(rs.getString("username") + ": " + rs.getLong("total"));
+            }
+        }
 
         provider.disconnect();
     }
@@ -305,6 +356,59 @@ StatefulRedisConnection<String, String> connection = provider.getConnection();
 connection.sync().publish("notifications","Hello, World!");
 ```
 
+### ClickHouse Cloud and SSL
+
+ClickHouse Cloud listens on the secure HTTP port (8443). The `cloud(...)` factory selects that
+port and enables SSL for you:
+
+```java
+ClickHouseCredentials credentials = ClickHouseCredentials.cloud("abc123.eu-central-1.aws.clickhouse.cloud", "password");
+
+// Or with an explicit user and database
+ClickHouseCredentials credentials = ClickHouseCredentials.cloud("abc123.eu-central-1.aws.clickhouse.cloud", "reader", "password", "analytics");
+```
+
+For a self-hosted server behind TLS, enable SSL explicitly along with the pool settings:
+
+```java
+ClickHouseCredentials credentials = ClickHouseCredentials.from(
+        "clickhouse.example.com", 8443, "reader", "password", "analytics",
+        true,          // SSL
+        "clickhouse",  // pool name
+        5, 20          // minimum / maximum pool size
+);
+```
+
+### ClickHouse Schema Loading
+
+The ClickHouse provider ships the same schema loader as MariaDB:
+
+```java
+provider.loadSchema(new File("schema.sql"));
+
+// Or load from classpath resources
+try (InputStream stream = getClass().getResourceAsStream("/schema.sql")) {
+    provider.loadSchema(stream);
+}
+```
+
+**Example schema.sql:**
+
+```sql
+CREATE TABLE IF NOT EXISTS events
+(
+    id        UInt64,
+    username  String,
+    createdAt DateTime DEFAULT now()
+) ENGINE = MergeTree()
+ORDER BY id;
+```
+
+The loader splits statements on `;` and skips `--` and `#` comment lines.
+
+> **Note:** ClickHouse does not support interactive transactions. The pool is kept in auto-commit
+> mode, so `Connection#commit()` and `Connection#rollback()` should not be used.
+
 ## API Reference
 
 ### Core Interfaces
@@ -329,6 +433,7 @@ Marker interface for credentials. Implementations:
 
 - `MariaDBCredentials(host, port, databaseName, username, password, minPoolSize, maxPoolSize)`
 - `RedisCredentials(host, port, database, username, password, minPoolSize, maxPoolSize)`
+- `ClickHouseCredentials(host, port, username, password, databaseName, ssl, poolName, minPoolSize, maxPoolSize)`
 
 ### MariaDBProvider
 
@@ -370,6 +475,26 @@ RedisProvider withClientResources(ClientResources clientResources)
 RedisProvider withClientOptions(ClientOptions clientOptions)
 
 StatefulRedisPubSubConnection<String, String> pubSubConnection()
+```
+
+### ClickHouseProvider
+
+```java
+// Constructor
+ClickHouseProvider(ClickHouseCredentials credentials)
+
+// Methods
+void connect()
+
+void disconnect()
+
+Connection getConnection() throws SQLException
+
+void loadSchema(File file) throws SQLException, IOException
+
+void loadSchema(InputStream stream) throws SQLException, IOException
+
+protected HikariConfig getHikariConfig(Properties properties)
 ```
 
 ## License

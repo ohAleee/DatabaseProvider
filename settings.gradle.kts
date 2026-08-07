@@ -5,5 +5,6 @@ include(
     "provider-mariadb",
     "provider-redis",
     "provider-mongodb",
-    "provider-h2"
+    "provider-h2",
+    "provider-clickhouse"
 )

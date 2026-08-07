@@ -5,6 +5,7 @@ lettuce = "7.5.2.RELEASE"
 commons-pool2 = "2.13.1"
 mongodb-driver = "5.6.4"
 h2 = "2.4.240"
+clickhouse = "0.9.8"
 
 [libraries]
 mariadb-client = { group = "org.mariadb.jdbc", name = "mariadb-java-client", version.ref = "mariadb" }
@@ -13,3 +14,4 @@ lettuce-core = { group = "io.lettuce", name = "lettuce-core", version.ref = "let
 commons-pool2 = { group = "org.apache.commons", name = "commons-pool2", version.ref = "commons-pool2" }
 mongodb-driver-sync = { group = "org.mongodb", name = "mongodb-driver-sync", version.ref = "mongodb-driver" }
 h2 = { group = "com.h2database", name = "h2", version.ref = "h2" }
+clickhouse-jdbc = { group = "com.clickhouse", name = "clickhouse-jdbc", version.ref = "clickhouse" }
